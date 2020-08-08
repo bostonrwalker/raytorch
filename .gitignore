@@ -133,3 +133,4 @@ dmypy.json
 
 # Generated output
 output/*
+!output/.gitkeep
