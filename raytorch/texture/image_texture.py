@@ -2,6 +2,7 @@ from raytorch.texture import Texture
 from raytorch.core import RGB
 import math
 from PIL import Image
+from os.path import abspath
 
 
 class ImageTexture(Texture):
@@ -16,7 +17,7 @@ class ImageTexture(Texture):
 
     def load(self):
         if self.path is not None:
-            self.ambient = Image.open(self.path, 'r')
+            self.ambient = Image.open(abspath(self.path), 'r')
 
     def texel_at(self, u, v):
         """

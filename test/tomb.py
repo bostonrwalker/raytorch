@@ -10,11 +10,11 @@ from datetime import datetime
 
 
 textures = {
-    'wall': ImageTexture('textures/TexturesCom_OrnamentsEgyptian0017_1_M/diffuse.jpg', use_tensors=True),
-    'floor': ImageTexture('textures/TexturesCom_MedievalFloor9Path_1K/diffuse.tiff', use_tensors=True),
-    'air_to_glass': Glass(normal_map_path='textures/TexturesCom_Various_EnergyPole_2K/normal.tif'),
-    'glass_to_air': Glass(normal_map_path='textures/TexturesCom_Various_EnergyPole_2K/normal.tif', inverted=True),
-    'metal': Metal(normal_map_path='textures/TexturesCom_Various_EnergyPole_2K/normal.tif')
+    'wall': ImageTexture('../textures/TexturesCom_OrnamentsEgyptian0017_1_M/diffuse.jpg', use_tensors=True),
+    'floor': ImageTexture('../textures/TexturesCom_MedievalFloor9Path_1K/diffuse.tiff', use_tensors=True),
+    'air_to_glass': Glass(normal_map_path='../textures/TexturesCom_Various_EnergyPole_2K/normal.tif'),
+    'glass_to_air': Glass(normal_map_path='../textures/TexturesCom_Various_EnergyPole_2K/normal.tif', inverted=True),
+    'metal': Metal(normal_map_path='../textures/TexturesCom_Various_EnergyPole_2K/normal.tif')
 }
 
 
@@ -71,4 +71,4 @@ if __name__ == '__main__':
     if output is None:
         image.show()
     else:
-        image.save(f'output/{output}')
+        image.save(f'../output/{output}')
