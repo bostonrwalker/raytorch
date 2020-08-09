@@ -9,19 +9,10 @@ import math
 import torch
 
 
-class Tensor(torch.Tensor):
-    """
-    Custom initialization of torch.Tensor
-    """
-    def __new__(cls, *args, fill_value=0., dtype=torch.float32, device=None, **kwargs):
-        if 'size' in kwargs.keys():
-            # Pre-allocated tensor initialization
-            return torch.full(*args, fill_value=fill_value, requires_grad=False, dtype=dtype, **kwargs)
-        else:
-            obj = torch.tensor(*args, requires_grad=False, dtype=dtype, **kwargs)
-        obj = obj.to(device)
-        obj.__class__ = Tensor
-        return obj
+# Custom batch_dot() method for tensors
+def _batch_dot(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
+    return torch.bmm(self.unsqueeze(1), other.unsqueeze(2)).squeeze(2).squeeze(1)
+torch.Tensor.batch_dot = _batch_dot
 
 
 class Rays:
@@ -37,8 +28,8 @@ class Rays:
         tex: Link to interaction texture (-1 = NULL)
     """
     
-    def __init__(self, src: Tensor, dst: Tensor, tbn: Tensor, uv: Tensor, wgt: Tensor, col: Tensor, par: Tensor,
-                 tex: Tensor):
+    def __init__(self, src: torch.Tensor, dst: torch.Tensor, tbn: torch.Tensor, uv: torch.Tensor, wgt: torch.Tensor,
+                 col: torch.Tensor, par: torch.Tensor, tex: torch.Tensor):
         self.__src = src
         self.__dst = dst
         self.__tbn = tbn
@@ -57,14 +48,14 @@ class Rays:
             raise ValueError(f'Unsupported/invalid int_dtype: {int_dtype}')
         
         return Rays(
-            src=Tensor(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
-            dst=Tensor(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
-            tbn=Tensor(size=[n, 3, 3], dtype=float_dtype, device=device, **kwargs),
-            uv=Tensor(size=[n, 2], dtype=float_dtype, device=device, **kwargs),
-            wgt=Tensor(size=[n], dtype=float_dtype, device=device, **kwargs),
-            col=Tensor(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
-            par=Tensor(size=[n], dtype=int_dtype, device=device, **kwargs),
-            tex=Tensor(size=[n], dtype=int_dtype, device=device, **kwargs)
+            src=torch.zeros(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
+            dst=torch.zeros(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
+            tbn=torch.zeros(size=[n, 3, 3], dtype=float_dtype, device=device, **kwargs),
+            uv=torch.zeros(size=[n, 2], dtype=float_dtype, device=device, **kwargs),
+            wgt=torch.zeros(size=[n], dtype=float_dtype, device=device, **kwargs),
+            col=torch.zeros(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
+            par=torch.zeros(size=[n], dtype=int_dtype, device=device, **kwargs),
+            tex=torch.zeros(size=[n], dtype=int_dtype, device=device, **kwargs)
         )
 
     @staticmethod
@@ -112,7 +103,7 @@ class Rays:
         return self.__src
 
     @src.setter
-    def src(self, x: Tensor):
+    def src(self, x):
         self.__src[:, :] = x
 
     @property
@@ -120,7 +111,7 @@ class Rays:
         return self.__dst
 
     @dst.setter
-    def dst(self, x: Tensor):
+    def dst(self, x):
         self.__dst[:, :] = x
 
     @property
@@ -128,7 +119,7 @@ class Rays:
         return self.__tbn[:, 0]
 
     @tan.setter
-    def tan(self, x: Tensor):
+    def tan(self, x):
         self.__tbn[:, 0] = x
 
     @property
@@ -136,7 +127,7 @@ class Rays:
         return self.__tbn[:, 1]
 
     @bit.setter
-    def bit(self, x: Tensor):
+    def bit(self, x):
         self.__tbn[:, 1] = x
 
     @property
@@ -144,7 +135,7 @@ class Rays:
         return self.__tbn[:, 2]
 
     @nrm.setter
-    def nrm(self, x: Tensor):
+    def nrm(self, x):
         self.__tbn[:, 2] = x
 
     @property
@@ -160,7 +151,7 @@ class Rays:
         return self.__uv
 
     @uv.setter
-    def uv(self, x: Tensor):
+    def uv(self, x):
         self.__uv[:, :] = x
 
     @property
@@ -168,7 +159,7 @@ class Rays:
         return self.__wgt
 
     @wgt.setter
-    def wgt(self, x: Tensor):
+    def wgt(self, x):
         self.__wgt[:] = x
 
     @property
@@ -176,7 +167,7 @@ class Rays:
         return self.__col
 
     @col.setter
-    def col(self, x: Tensor):
+    def col(self, x):
         self.__col[:, :] = x
 
     @property
@@ -184,7 +175,7 @@ class Rays:
         return self. __par
 
     @par.setter
-    def par(self, x: Tensor):
+    def par(self, x):
         self.__par[:] = x
 
     @property
@@ -192,17 +183,10 @@ class Rays:
         return self.__tex
 
     @tex.setter
-    def tex(self, x: Tensor):
+    def tex(self, x):
         self.__tex[:] = x
 
 
-# Custom batch_dot() method for tensors
-def _batch_dot(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
-    return torch.bmm(self.unsqueeze(1), other.unsqueeze(2)).squeeze(2).squeeze(1)
-torch.Tensor.batch_dot = _batch_dot
-
-
-# noinspection PyMethodMayBeStatic
 class RayTracer(Renderer):
 
     def __init__(self, max_depth=16, ray_min_weight=1/256., ray_col=Black, ray_len=1e1, ray_offset_len=5e-3,
@@ -250,7 +234,7 @@ class RayTracer(Renderer):
         self.ambient_maps[texture] = self._image_as_tensors(texture.ambient)
 
     def _load_fresnel_texture(self, texture: FresnelTexture):
-        self.fresnel_funcs[texture] = self._float_tensor([list(texture.reflectivity_func(
+        self.fresnel_funcs[texture] = self._as_float_tensor([list(texture.reflectivity_func(
             (step / self.fresnel_func_res) * math.pi / 2)) for step in range(self.fresnel_func_res)])
         if texture.normal_map is not None:
             self.normal_maps[texture] = self._normal_map_as_tensors(texture.normal_map)
@@ -258,15 +242,15 @@ class RayTracer(Renderer):
     def _image_as_tensors(self, image: Image):
         width, height = image.width, image.height
         pixels = list([p[0:3] for p in image.getdata()])
-        rgb = self._float_tensor(pixels) / 255.
-        return self._float_tensor([width, height]), rgb.reshape([height, width, 3]).flip(0).transpose(0, 1)
+        rgb = self._as_float_tensor(pixels) / 255.
+        return self._as_float_tensor([width, height]), rgb.reshape([height, width, 3]).flip(0).transpose(0, 1)
 
     def _normal_map_as_tensors(self, image: Image):
         width, height = image.width, image.height
         pixels = list([p[0:3] for p in image.getdata()])
-        xyz = self._float_tensor(pixels) / 128. - 1.
+        xyz = self._as_float_tensor(pixels) / 128. - 1.
         xyz = xyz / xyz.norm(dim=1).unsqueeze(1)
-        return self._float_tensor([width, height]), xyz.reshape([height, width, 3]).flip(0).transpose(0, 1)
+        return self._as_float_tensor([width, height]), xyz.reshape([height, width, 3]).flip(0).transpose(0, 1)
 
     def _get_texels(self, texture: ImageTexture, uv: torch.Tensor):
         """
@@ -386,9 +370,9 @@ class RayTracer(Renderer):
         """
 
         # Surface description
-        pos = self._float_tensor(surface.pos.aslist()[0:3])
-        btm = self._float_tensor(surface.bottom_edge.aslist()[0:3])
-        left = self._float_tensor(surface.left_edge.aslist()[0:3])
+        pos = self._as_float_tensor(surface.pos.aslist()[0:3])
+        btm = self._as_float_tensor(surface.bottom_edge.aslist()[0:3])
+        left = self._as_float_tensor(surface.left_edge.aslist()[0:3])
 
         # Unit normal vector
         n = btm.cross(left)
@@ -444,7 +428,7 @@ class RayTracer(Renderer):
     def _intersect_ellipsoid(self, rays: Rays, ellipsoid: Ellipsoid):
 
         # Ellipsoid centrepoint
-        pos = self._float_tensor(ellipsoid.pos.aslist()[0:3])
+        pos = self._as_float_tensor(ellipsoid.pos.aslist()[0:3])
 
         """
         Matrix composition
@@ -459,11 +443,11 @@ class RayTracer(Renderer):
         """
 
         # Axes as transformation matrix (rotation/scaling) [3 x 3]
-        A = self._float_tensor([ellipsoid.first_axis.aslist()[0:3], ellipsoid.second_axis.aslist()[0:3],
+        A = self._as_float_tensor([ellipsoid.first_axis.aslist()[0:3], ellipsoid.second_axis.aslist()[0:3],
                                 ellipsoid.third_axis.aslist()[0:3]])
         A = A / (A.norm(dim=1) ** 2).unsqueeze(-1)
         A_t = A.transpose(0, 1)
-        A_inv_t = self._float_tensor([ellipsoid.first_axis.aslist()[0:3], ellipsoid.second_axis.aslist()[0:3],
+        A_inv_t = self._as_float_tensor([ellipsoid.first_axis.aslist()[0:3], ellipsoid.second_axis.aslist()[0:3],
                                       ellipsoid.third_axis.aslist()[0:3]])
         Q = A_t @ A
 
@@ -564,7 +548,7 @@ class RayTracer(Renderer):
         # Tangent
         # noinspection PyArgumentList
         t = torch.cat([(-n[:, 1] / sintheta).unsqueeze(1), (n[:, 0] / sintheta).unsqueeze(1),
-                       self._float_tensor(size=[n.shape[0], 1], fill_value=0.)], axis=1)
+                       self._zeros([n.shape[0], 1])], axis=1)
 
         # Bitangent
         # noinspection PyArgumentList
@@ -658,7 +642,7 @@ class RayTracer(Renderer):
         Ambient colouration
         """
         # Ambient surface colour
-        col = self._float_tensor(texture.surface_col.asarray())
+        col = self._as_float_tensor(texture.surface_col.asarray())
 
         # Apply ambient colouration
         rays.col[indices] = pa.unsqueeze(-1) * col.unsqueeze(0).expand(indices.shape[0], 3)
@@ -716,7 +700,7 @@ class RayTracer(Renderer):
         phi_theta = torch.cartesian_prod(phi, theta)
 
         # Source: origin
-        src = self._float_tensor([.0, .0, .0])
+        src = self._as_float_tensor([.0, .0, .0])
 
         # Destination
         dst = torch.cat([
@@ -731,12 +715,15 @@ class RayTracer(Renderer):
         rays.src = src
         rays.dst = dst
         rays.wgt = weight
-        rays.col = self._float_tensor(self.ray_col.asarray())
+        rays.col = self._as_float_tensor(self.ray_col.asarray())
 
         return rays
 
     def _allocate_rays(self, n: int, **kwargs) -> Rays:
         return Rays.allocate(n, float_dtype=self.float_dtype, int_dtype=self.int_dtype, device=self.device, **kwargs)
 
-    def _float_tensor(self, *args, **kwargs) -> Tensor:
-        return Tensor(*args, **kwargs, dtype=self.float_dtype, device=self.device)
+    def _as_float_tensor(self, data, **kwargs) -> torch.Tensor:
+        return torch.tensor(data, requires_grad=False, dtype=self.float_dtype, **kwargs).to(device=self.device)
+
+    def _zeros(self, size, **kwargs) -> torch.Tensor:
+        return torch.zeros(size, requires_grad=False, dtype=self.float_dtype, **kwargs).to(device=self.device)
