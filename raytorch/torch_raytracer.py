@@ -444,11 +444,11 @@ class RayTracer(Renderer):
 
         # Axes as transformation matrix (rotation/scaling) [3 x 3]
         A = self._as_float_tensor([ellipsoid.first_axis.aslist()[0:3], ellipsoid.second_axis.aslist()[0:3],
-                                ellipsoid.third_axis.aslist()[0:3]])
+                                   ellipsoid.third_axis.aslist()[0:3]])
         A = A / (A.norm(dim=1) ** 2).unsqueeze(-1)
         A_t = A.transpose(0, 1)
         A_inv_t = self._as_float_tensor([ellipsoid.first_axis.aslist()[0:3], ellipsoid.second_axis.aslist()[0:3],
-                                      ellipsoid.third_axis.aslist()[0:3]])
+                                         ellipsoid.third_axis.aslist()[0:3]])
         Q = A_t @ A
 
         """
