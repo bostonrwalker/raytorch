@@ -331,7 +331,7 @@ class RayTracer(Renderer):
                 if texture_ind >= 0:
                     texture = self.textures[texture_ind]
                     # noinspection PyUnresolvedReferences
-                    ray_ind = (rays.tex == texture_ind).nonzero().squeeze(1)
+                    ray_ind = (rays.tex == texture_ind).nonzero(as_tuple=False).squeeze(1)
                     new_rays = self.interact(rays, ray_ind, texture)
                     if len(new_rays) > 0:
                         all_new_rays.append(new_rays)
@@ -407,13 +407,13 @@ class RayTracer(Renderer):
         dotn = r @ n
 
         # Check if surface facing towards ray
-        ind0 = (dotn < 0.).nonzero().squeeze(1)
+        ind0 = (dotn < 0.).nonzero(as_tuple=False).squeeze(1)
 
         # Find point along ray parameterization where intersection occurs
         t = ((pos - rays.src[ind0].squeeze(1)) @ n) / (l[ind0] * dotn[ind0])
 
         # Check if intersection between tail and tip
-        ind1 = ((t >= 0.) & (t < 1.)).nonzero().squeeze(-1)
+        ind1 = ((t >= 0.) & (t < 1.)).nonzero(as_tuple=False).squeeze(-1)
         ind0 = ind0[ind1]
 
         # Find intersection point in world coordinates
@@ -424,7 +424,8 @@ class RayTracer(Renderer):
         uv = cp @ torch.cat((btm.unsqueeze(-1), left.unsqueeze(-1)), dim=1)
 
         # Check if collision point within plane
-        ind2 = ((uv[:, 0] >= 0.) & (uv[:, 0] < 1.) & (uv[:, 1] >= 0.) & (uv[:, 1] < 1.)).nonzero().squeeze(1)
+        ind2 = ((uv[:, 0] >= 0.) & (uv[:, 0] < 1.) & (uv[:, 1] >= 0.) & (uv[:, 1] < 1.)).nonzero(as_tuple=False)\
+            .squeeze(1)
         ind0 = ind0[ind2]
 
         # Tangent and bitangent
@@ -491,7 +492,7 @@ class RayTracer(Renderer):
         u = -p.batch_dot(Q_dot_d)
 
         # If ellipsoid is not inverted, centre must be ahead of ray
-        ind0 = (u >= 0.).nonzero().squeeze(1) if not ellipsoid.inverted else torch.arange(len(rays))
+        ind0 = (u >= 0.).nonzero(as_tuple=False).squeeze(1) if not ellipsoid.inverted else torch.arange(len(rays))
         d = d[ind0]
         Q_dot_d = Q_dot_d[ind0]
         p = p[ind0]
@@ -505,7 +506,7 @@ class RayTracer(Renderer):
         det = u ** 2 - (mag_p - 1.) * mag_d
 
         # Check if quadratic equation has real solutions
-        ind1 = (det >= 0.).nonzero().squeeze(1)
+        ind1 = (det >= 0.).nonzero(as_tuple=False).squeeze(1)
         ind0 = ind0[ind1]
         d = d[ind1]
         u = u[ind1]
@@ -516,7 +517,7 @@ class RayTracer(Renderer):
         t = (u - det.sqrt()) / mag_d if not ellipsoid.inverted else (u + det.sqrt()) / mag_d
 
         # If intersection occurs between tip and tail
-        ind2 = ((t >= 0.) & (t < 1.)).nonzero().squeeze(1)
+        ind2 = ((t >= 0.) & (t < 1.)).nonzero(as_tuple=False).squeeze(1)
         ind0 = ind0[ind2]
         d = d[ind2]
         t = t[ind2]
@@ -666,7 +667,7 @@ class RayTracer(Renderer):
         Reflection
         """
         # Enforce minimum weight of reflected ray
-        ref_ind = (pr > self.ray_min_weight).nonzero().squeeze(1)  # Reflected ray indices in subset
+        ref_ind = (pr > self.ray_min_weight).nonzero(as_tuple=False).squeeze(1)  # Reflected ray indices in subset
         ref_par_rays = par_rays[ref_ind]
         ref_wgt = pr[ref_ind]
         ref_col = ref_wgt.unsqueeze(-1) * col.unsqueeze(0).expand(ref_wgt.shape[0], 3)
@@ -683,7 +684,7 @@ class RayTracer(Renderer):
         Transmission (refraction)
         """
         # Enforce minimum weight of transmitted ray
-        trans_ind = (pt > self.ray_min_weight).nonzero().squeeze(1)  # Reflected ray indices in subset
+        trans_ind = (pt > self.ray_min_weight).nonzero(as_tuple=False).squeeze(1)  # Reflected ray indices in subset
         trans_par_rays = par_rays[trans_ind]
         trans_wgt = pt[trans_ind]
         trans_col = trans_wgt.unsqueeze(-1) * col.unsqueeze(0).expand(trans_wgt.shape[0], 3)
