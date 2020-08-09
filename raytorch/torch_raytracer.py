@@ -488,7 +488,7 @@ class RayTracer(Renderer):
         # Normalized projection of ellipsoid centrepoint onto ray
         p = rays.src - pos
         Q_dot_d = d @ Q
-        u = -_batch_dot(p, Q_dot_d)
+        u = -p.batch_dot(Q_dot_d)
 
         # If ellipsoid is not inverted, centre must be ahead of ray
         ind0 = (u >= 0.).nonzero().squeeze(1) if not ellipsoid.inverted else torch.arange(len(rays))
@@ -498,8 +498,8 @@ class RayTracer(Renderer):
         u = u[ind0]
 
         # Projection magnitude of ellipsoid centrepoint onto ray
-        mag_d = _batch_dot(d, Q_dot_d)
-        mag_p = _batch_dot(p, p @ Q)
+        mag_d = d.batch_dot(Q_dot_d)
+        mag_p = p.batch_dot(p @ Q)
 
         # Quadratic discriminant
         det = u ** 2 - (mag_p - 1.) * mag_d
@@ -637,10 +637,10 @@ class RayTracer(Renderer):
         n /= n.norm(dim=1).unsqueeze(-1)
 
         # Intermediate products
-        ddotn = _batch_dot(d, n)
+        ddotn = d.batch_dot(n)
 
         # Incident angle
-        theta = torch.acos(_batch_dot(-d, n).clamp(0., 1.))
+        theta = torch.acos((-d).batch_dot(n).clamp(0., 1.))
 
         # Reflection vector
         ref = d - 2. * ddotn.unsqueeze(-1) * n
