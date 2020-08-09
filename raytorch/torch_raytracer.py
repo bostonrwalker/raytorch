@@ -3,9 +3,8 @@ from raytorch.surface import Surface, Parallelogram, Ellipsoid
 from raytorch.texture import Texture, ImageTexture, FresnelTexture
 from raytorch.camera import Camera
 from raytorch.renderer import Renderer
-from typing import Iterable
 from PIL import Image
-from typing import Sequence
+from typing import Sequence, Iterable
 import math
 import torch
 
@@ -14,199 +13,187 @@ class Tensor(torch.Tensor):
     """
     Custom initialization of torch.Tensor
     """
-    def __new__(cls, *args, dtype=torch.float32, device=None, **kwargs):
+    def __new__(cls, *args, fill_value=0., dtype=torch.float32, device=None, **kwargs):
         if 'size' in kwargs.keys():
             # Pre-allocated tensor initialization
-            if 'fill_value' in kwargs.keys():
-                obj = torch.full(*args, **kwargs, requires_grad=False, dtype=dtype)
-            else:
-                obj = torch.Tensor(*args, **kwargs, requires_grad=False, dtype=dtype)
+            return torch.full(*args, fill_value=fill_value, requires_grad=False, dtype=dtype, **kwargs)
         else:
-            obj = torch.tensor(*args, **kwargs, requires_grad=False, dtype=dtype)
+            obj = torch.tensor(*args, requires_grad=False, dtype=dtype, **kwargs)
         obj = obj.to(device)
         obj.__class__ = Tensor
         return obj
 
-    # noinspection PyMissingConstructor
-    def __init__(self, *args, **kwargs):
-        self._init_shape = list(self.shape[1:])
 
-    def clone(self, *args, **kwargs):
-        obj = super().clone(*args, **kwargs)
-        obj.__class__ = self.__class__
-        obj._init_shape = self._init_shape
-        return obj
-
-    def __getitem__(self, key):
-        obj = super().__getitem__(key)
-        if isinstance(obj, torch.Tensor):
-            # Keep Tensors as Tensors when possible
-            if self.__class__ == Tensor:
-                obj._init_shape = list(self.shape[1:])
-                obj.__class__ = Tensor
-            # Keep Tensor subclasses as Tensor subclasses when shape remains the same
-            elif issubclass(self.__class__, Tensor) and len(obj.shape[1:]) == len(self._init_shape) and \
-                    list(obj.shape[1:]) == self._init_shape:
-                obj._init_shape = list(self.shape[1:])
-                obj.__class__ = self.__class__
-        return obj
+class Rays:
+    """
+    Collection of tensors containing ray data:
+        src: Source vector in eye space
+        dst: Destination vector in eye space
+        tbn: Tangent (+x), bitangent (+y), and normal vectors at surface interaction in eye space
+            [note: n = t x b, (t, b, n) form basis for surface tangent space]
+        uv: 2-D coords of interaction point in texture space
+        wgt: Ray weight
+        par: Link to parent rays (-1 = NULL)
+        tex: Link to interaction texture (-1 = NULL)
+    """
+    
+    def __init__(self, src: Tensor, dst: Tensor, tbn: Tensor, uv: Tensor, wgt: Tensor, col: Tensor, par: Tensor,
+                 tex: Tensor):
+        self.__src = src
+        self.__dst = dst
+        self.__tbn = tbn
+        self.__uv = uv
+        self.__wgt = wgt
+        self.__col = col
+        self.__par = par
+        self.__tex = tex
 
     @staticmethod
-    def cat(tensors, cls: type, *args, **kwargs):
-        if not issubclass(cls, Tensor):
-            raise ValueError('cls must be a subclass of Tensor')
-        try:
-            for t in tensors:
-                if not isinstance(t, cls):
-                    raise ValueError(f'All tensors must be instances of {cls}')
-        except TypeError:
-            raise ValueError('tensors must be an iterable')
-        obj = torch.cat(tensors, *args, **kwargs)
-        # noinspection PyProtectedMember
-        obj._init_shape = tensors[0]._init_shape
-        obj.__class__ = cls
-        return obj
-
-
-class RayTensor(Tensor):
-    """
-    Float tensor containing ray data - [N rays x 3 dimensions x 7 vectors]:
-        (0) s: Source vector in eye space
-        (1) d: Destination vector in eye space
-        (2) t: Tangent (+x) vector at surface interaction in eye space
-        (3) b: Bitangent (+y) vector at surface interaction in eye space
-        (4) n: Normal vector at surface interaction in eye space
-        (5) uv:
-            (0-1) 2-D coords of interaction point in texture space
-            (2): Ray weight
-        (6) col: RGB colour vector
-
-    Note: n = t x b, (t, b, n) form basis for surface tangent space
-    """
-    __DIM = [7, 3]
-
-    def __new__(cls, n, dtype=torch.float32, **kwargs):
-        if dtype not in [torch.float16, torch.float32, torch.float64, torch.float]:
-            raise ValueError(f'Invalid dtype for RayTensor: {dtype}')
-        obj = Tensor(size=[n] + RayTensor.__DIM, fill_value=0., dtype=dtype, **kwargs)
-        obj.__class__ = RayTensor
-        return obj
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def allocate(n, float_dtype=torch.float32, int_dtype=torch.int64, device=None, **kwargs):
+        if float_dtype not in [torch.float16, torch.float32, torch.float64, torch.float]:
+            raise ValueError(f'Invalid float_dtype: {float_dtype}')
+        if int_dtype not in [torch.int32, torch.int64, torch.int]:
+            # Shouldn't use less than 32-bit integers to track linkages
+            raise ValueError(f'Unsupported/invalid int_dtype: {int_dtype}')
+        
+        return Rays(
+            src=Tensor(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
+            dst=Tensor(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
+            tbn=Tensor(size=[n, 3, 3], dtype=float_dtype, device=device, **kwargs),
+            uv=Tensor(size=[n, 2], dtype=float_dtype, device=device, **kwargs),
+            wgt=Tensor(size=[n], dtype=float_dtype, device=device, **kwargs),
+            col=Tensor(size=[n, 3], dtype=float_dtype, device=device, **kwargs),
+            par=Tensor(size=[n], dtype=int_dtype, device=device, **kwargs),
+            tex=Tensor(size=[n], dtype=int_dtype, device=device, **kwargs)
+        )
 
     @staticmethod
-    def cat(tensors, *args, **kwargs):
-        return Tensor.cat(tensors, cls=RayTensor, *args, **kwargs)
+    def cat(tensors: Iterable, *args, **kwargs):
+        return Rays(
+            src=torch.cat([t.src for t in tensors], *args, **kwargs),
+            dst=torch.cat([t.dst for t in tensors], *args, **kwargs),
+            tbn=torch.cat([t.tbn for t in tensors], *args, **kwargs),
+            uv=torch.cat([t.uv for t in tensors], *args, **kwargs),
+            wgt=torch.cat([t.wgt for t in tensors], *args, **kwargs),
+            col=torch.cat([t.col for t in tensors], *args, **kwargs),
+            par=torch.cat([t.par for t in tensors], *args, **kwargs),
+            tex=torch.cat([t.tex for t in tensors], *args, **kwargs)
+        )
+    
+    def clone(self):
+        return Rays(
+            src=self.src.clone(),
+            dst=self.dst.clone(),
+            tbn=self.tbn.clone(),
+            uv=self.uv.clone(),
+            wgt=self.wgt.clone(),
+            col=self.col.clone(),
+            par=self.par.clone(),
+            tex=self.tex.clone()
+        )
+    
+    def __getitem__(self, item):
+        return Rays(
+            src=self.src[item],
+            dst=self.dst[item],
+            tbn=self.tbn[item],
+            uv=self.uv[item],
+            wgt=self.wgt[item],
+            col=self.col[item],
+            par=self.par[item],
+            tex=self.tex[item]
+        )
+
+    def __len__(self):
+        return self.__src.shape[0]
 
     @property
     def src(self):
-        return self[:, 0, :]
+        return self.__src
 
     @src.setter
-    def src(self, x):
-        self[:, 0, :] = x
+    def src(self, x: Tensor):
+        self.__src[:, :] = x
 
     @property
     def dst(self):
-        return self[:, 1, :]
+        return self.__dst
 
     @dst.setter
-    def dst(self, x):
-        self[:, 1, :] = x
+    def dst(self, x: Tensor):
+        self.__dst[:, :] = x
 
     @property
     def tan(self):
-        return self[:, 2, :]
+        return self.__tbn[:, 0]
 
     @tan.setter
-    def tan(self, x):
-        self[:, 2, :] = x
+    def tan(self, x: Tensor):
+        self.__tbn[:, 0] = x
 
     @property
     def bit(self):
-        return self[:, 3, :]
+        return self.__tbn[:, 1]
 
     @bit.setter
-    def bit(self, x):
-        self[:, 3, :] = x
+    def bit(self, x: Tensor):
+        self.__tbn[:, 1] = x
 
     @property
     def nrm(self):
-        return self[:, 4, :]
+        return self.__tbn[:, 2]
 
     @nrm.setter
-    def nrm(self, x):
-        self[:, 4, :] = x
+    def nrm(self, x: Tensor):
+        self.__tbn[:, 2] = x
 
     @property
     def tbn(self):
-        return self[:, 2:5, :]
+        return self.__tbn
 
     @tbn.setter
     def tbn(self, x):
-        self[:, 2:5, :] = x
+        self.__tbn[:, :, :] = x
 
     @property
     def uv(self):
-        return self[:, 5, 0:2]
+        return self.__uv
 
     @uv.setter
-    def uv(self, x):
-        self[:, 5, 0:2] = x
+    def uv(self, x: Tensor):
+        self.__uv[:, :] = x
 
     @property
     def wgt(self):
-        return self[:, 5, 2]
+        return self.__wgt
 
     @wgt.setter
-    def wgt(self, x):
-        self[:, 5, 2] = x
+    def wgt(self, x: Tensor):
+        self.__wgt[:] = x
 
     @property
     def col(self):
-        return self[:, 6, :]
+        return self.__col
 
     @col.setter
-    def col(self, x):
-        self[:, 6, :] = x
-
-
-class LinkTensor(Tensor):
-    """
-    Long tensor containing linkage data (parent ray, interaction texture) - [N rays x 2 entries]:
-        (0) Parent ray index (-1 = NULL)
-        (1) Interaction texture index (-1 = NULL)
-    """
-    __DIM = [2]
-
-    def __new__(cls, n, dtype=torch.int64, **kwargs):
-        if dtype not in [torch.int32, torch.int64, torch.int]:
-            # Shouldn't use less than 32-bit integers to track linkages
-            raise ValueError(f'Unsupported/invalid dtype for LinkTensor: {dtype}')
-        obj = Tensor(size=[n] + LinkTensor.__DIM, fill_value=-1, dtype=dtype, **kwargs)
-        obj.__class__ = LinkTensor
-        return obj
-
-    @staticmethod
-    def cat(tensors, *args, **kwargs):
-        return Tensor.cat(tensors, cls=LinkTensor, *args, **kwargs)
+    def col(self, x: Tensor):
+        self.__col[:, :] = x
 
     @property
     def par(self):
-        return self[:, 0]
+        return self. __par
 
     @par.setter
-    def par(self, x):
-        self[:, 0] = x
+    def par(self, x: Tensor):
+        self.__par[:] = x
 
     @property
     def tex(self):
-        return self[:, 1]
+        return self.__tex
 
     @tex.setter
-    def tex(self, x):
-        self[:, 1] = x
+    def tex(self, x: Tensor):
+        self.__tex[:] = x
 
 
 # Custom batch_dot() method for tensors
@@ -248,7 +235,7 @@ class RayTracer(Renderer):
         self.normal_maps = {}
         self.fresnel_funcs = {}
         self.width, self.height = 0, 0
-        self.fov = (self._ray_tensor(0), self._link_tensor(0))
+        self.fov = self._allocate_rays(0)
 
     def load_textures(self, textures: Sequence[Texture]):
         self.textures = textures
@@ -322,38 +309,37 @@ class RayTracer(Renderer):
     def render(self, camera: Camera, world: Iterable[Surface], **kwargs) -> Image:
 
         # Start with cached FOV
-        pixel_rays, pixel_ray_links = self.fov[0].clone(), self.fov[1].clone()
+        pixel_rays = self.fov.clone()
 
         # Apply camera view matrix to world
         view = camera.look_at()
         world = [view @ surface for surface in world]
 
         # Ray tracing algorithm (breadth-first tree traversal)
-        tree = {0: (pixel_rays, pixel_ray_links)}
+        tree = {0: pixel_rays}
 
         for gen in range(0, self.max_depth):
 
             # Simulate intersections with each surface
-            rays, links = tree[gen]
+            rays = tree[gen]
             for surface in world:
-                self.intersect(rays, links, surface)
+                self.intersect(rays, surface)
 
             # Simulate interactions with each texture
-            new_ray_tensors, new_link_tensors = [], []
-            for texture_ind in links.tex.unique():
+            all_new_rays = []
+            for texture_ind in rays.tex.unique():
                 if texture_ind >= 0:
                     texture = self.textures[texture_ind]
                     # noinspection PyUnresolvedReferences
-                    ray_ind = (links.tex == texture_ind).nonzero().squeeze(1)
-                    new_rays, new_links = self.interact(rays, ray_ind, texture)
-                    if new_rays.shape[0] > 0:
-                        new_ray_tensors.append(new_rays)
-                        new_link_tensors.append(new_links)
+                    ray_ind = (rays.tex == texture_ind).nonzero().squeeze(1)
+                    new_rays = self.interact(rays, ray_ind, texture)
+                    if len(new_rays) > 0:
+                        all_new_rays.append(new_rays)
 
             # Continue only if any rays generated
-            if len(new_ray_tensors) > 0:
-                tree[gen + 1] = (RayTensor.cat([self._ray_tensor(0)] + new_ray_tensors),
-                                 LinkTensor.cat([self._link_tensor(0)] + new_link_tensors))
+            if len(all_new_rays) > 0:
+                # noinspection PyTypeChecker
+                tree[gen + 1] = Rays.cat([self._allocate_rays(0)] + all_new_rays)
                 continue
             else:
                 break
@@ -362,10 +348,9 @@ class RayTracer(Renderer):
         for gen in reversed(list(tree.keys())[1:]):
 
             # Add colour back to parent rays
-            rays, links = tree[gen]
-            par_rays = tree[gen - 1][0]
-            # noinspection PyUnresolvedReferences
-            par_rays.col.index_add_(0, links.par, rays.col)
+            rays = tree[gen]
+            par_rays = tree[gen - 1]
+            par_rays.col.index_add_(0, rays.par, rays.col)
 
         # Convert
         pixels = (pixel_rays.col * 256.).floor().int().clamp(0, 255)
@@ -375,18 +360,18 @@ class RayTracer(Renderer):
 
         return image
 
-    def intersect(self, rays: RayTensor, links: LinkTensor, surface: Surface):
+    def intersect(self, rays: Rays, surface: Surface):
         """
 
         """
         if isinstance(surface, Parallelogram):
-            self._intersect_parallelogram(rays, links, surface)
+            self._intersect_parallelogram(rays, surface)
         elif isinstance(surface, Ellipsoid):
-            self._intersect_ellipsoid(rays, links, surface)
+            self._intersect_ellipsoid(rays, surface)
         else:
             raise TypeError(f'Unsupported surface type: {type(surface)}')
 
-    def _intersect_parallelogram(self, rays: RayTensor, links: LinkTensor, surface: Parallelogram):
+    def _intersect_parallelogram(self, rays: Rays, surface: Parallelogram):
         """
         Ray equations - t in range [0, 1)
         x = r.src.x + t * (r.dst.x - r.src.x)
@@ -452,11 +437,10 @@ class RayTracer(Renderer):
         rays.bit[ind0] = bit  # Bitangent
         rays.nrm[ind0] = n  # Normal
         rays.uv[ind0] = uv[ind2, :]  # Texture coords
-
-        links.tex[ind0] = surface.texture  # Texture index
+        rays.tex[ind0] = surface.texture  # Texture index
 
     # noinspection PyPep8Naming
-    def _intersect_ellipsoid(self, rays: RayTensor, links: LinkTensor, ellipsoid: Ellipsoid):
+    def _intersect_ellipsoid(self, rays: Rays, ellipsoid: Ellipsoid):
 
         # Ellipsoid centrepoint
         pos = self._float_tensor(ellipsoid.pos.aslist()[0:3])
@@ -507,7 +491,7 @@ class RayTracer(Renderer):
         u = -_batch_dot(p, Q_dot_d)
 
         # If ellipsoid is not inverted, centre must be ahead of ray
-        ind0 = (u >= 0.).nonzero().squeeze(1) if not ellipsoid.inverted else torch.arange(rays.shape[0])
+        ind0 = (u >= 0.).nonzero().squeeze(1) if not ellipsoid.inverted else torch.arange(len(rays))
         d = d[ind0]
         Q_dot_d = Q_dot_d[ind0]
         p = p[ind0]
@@ -612,10 +596,9 @@ class RayTracer(Renderer):
         rays.dst[ind0] = c  # New destination points
         rays.tbn[ind0] = tbn_eye  # Tangent, bitangent, normal
         rays.uv[ind0] = uv  # Texture coordinates
+        rays.tex[ind0] = ellipsoid.texture  # Texture index
 
-        links.tex[ind0] = ellipsoid.texture  # Texture index
-
-    def interact(self, rays: RayTensor, indices: torch.IntTensor, texture: Texture) -> (RayTensor, LinkTensor):
+    def interact(self, rays: Rays, indices: torch.IntTensor, texture: Texture) -> Rays:
         """
         """
         if isinstance(texture, ImageTexture):
@@ -625,13 +608,11 @@ class RayTracer(Renderer):
         else:
             raise TypeError(f'Unsupported texture type: {type(texture)}')
 
-    def _interact_image(self, rays: RayTensor, indices: torch.IntTensor, texture: ImageTexture) ->\
-            (torch.Tensor, torch.LongTensor):
+    def _interact_image(self, rays: Rays, indices: torch.IntTensor, texture: ImageTexture) -> Rays:
         rays.col[indices] = self._get_texels(texture, rays.uv[indices]) * rays.wgt[indices].unsqueeze(-1)
-        return self._ray_tensor(0), self._link_tensor(0)
+        return self._allocate_rays(0)
 
-    def _interact_fresnel(self, rays: RayTensor, indices: torch.IntTensor, texture: FresnelTexture) ->\
-            (torch.Tensor, torch.LongTensor):
+    def _interact_fresnel(self, rays: Rays, indices: torch.IntTensor, texture: FresnelTexture) -> Rays:
 
         # Subset parent rays only
         par_rays = rays[indices]
@@ -686,40 +667,38 @@ class RayTracer(Renderer):
         """
         # Enforce minimum weight of reflected ray
         ref_ind = (pr > self.ray_min_weight).nonzero().squeeze(1)  # Reflected ray indices in subset
-        ref_par_rays = par_rays[ref_ind, :, :]
+        ref_par_rays = par_rays[ref_ind]
         ref_wgt = pr[ref_ind]
         ref_col = ref_wgt.unsqueeze(-1) * col.unsqueeze(0).expand(ref_wgt.shape[0], 3)
 
         # Construct ray, links datasets
-        ref_rays, ref_links = self._ray_tensor(ref_ind.shape[0]), self._link_tensor(ref_ind.shape[0])
+        ref_rays = self._allocate_rays(ref_ind.shape[0])
         ref_rays.src = ref_par_rays.dst + model_n[ref_ind, :] * self.ray_offset_len
         ref_rays.dst = ref_par_rays.dst + ref[ref_ind, :] * self.ray_len
         ref_rays.wgt = ref_wgt
         ref_rays.col = ref_col
-        ref_links.par = indices[ref_ind]
+        ref_rays.par = indices[ref_ind]
 
         """
         Transmission (refraction)
         """
         # Enforce minimum weight of transmitted ray
         trans_ind = (pt > self.ray_min_weight).nonzero().squeeze(1)  # Reflected ray indices in subset
-        trans_par_rays = par_rays[trans_ind, :, :]
+        trans_par_rays = par_rays[trans_ind]
         trans_wgt = pt[trans_ind]
         trans_col = trans_wgt.unsqueeze(-1) * col.unsqueeze(0).expand(trans_wgt.shape[0], 3)
 
         # Construct ray, links datasets
-        trans_rays, trans_links = self._ray_tensor(trans_ind.shape[0]), self._link_tensor(trans_ind.shape[0])
+        trans_rays = self._allocate_rays(trans_ind.shape[0])
         trans_rays.src = trans_par_rays.dst - model_n[trans_ind, :] * self.ray_offset_len
         trans_rays.dst = trans_par_rays.dst + trans[trans_ind, :] * self.ray_len
         trans_rays.wgt = trans_wgt
         trans_rays.col = trans_col
-        trans_links.par = indices[trans_ind]
+        trans_rays.par = indices[trans_ind]
 
-        new_rays = RayTensor.cat([ref_rays, trans_rays])
-        new_links = LinkTensor.cat([ref_links, trans_links])
-        return new_rays, new_links
+        return Rays.cat([ref_rays, trans_rays])
 
-    def _build_spherical_perspective(self, fov: float, width: int, height: int) -> (RayTensor, LinkTensor):
+    def _build_spherical_perspective(self, fov: float, width: int, height: int) -> Rays:
         """
         Build fish-eye array of rays
         """
@@ -745,8 +724,7 @@ class RayTracer(Renderer):
             (-self.ray_len * torch.cos(phi_theta[:, 1]) * torch.cos(phi_theta[:, 0])).unsqueeze(-1)
         ], dim=1)
 
-        rays = self._ray_tensor(width * height)
-        links = self._link_tensor(width * height)
+        rays = self._allocate_rays(width * height)
         weight = 1.
 
         rays.src = src
@@ -754,15 +732,10 @@ class RayTracer(Renderer):
         rays.wgt = weight
         rays.col = self._float_tensor(self.ray_col.asarray())
 
-        return rays, links
+        return rays
+
+    def _allocate_rays(self, n: int, **kwargs) -> Rays:
+        return Rays.allocate(n, float_dtype=self.float_dtype, int_dtype=self.int_dtype, device=self.device, **kwargs)
 
     def _float_tensor(self, *args, **kwargs) -> Tensor:
         return Tensor(*args, **kwargs, dtype=self.float_dtype, device=self.device)
-
-    def _ray_tensor(self, n: int) -> RayTensor:
-        # noinspection PyTypeChecker
-        return RayTensor(n=n, dtype=self.float_dtype, device=self.device)
-
-    def _link_tensor(self, n: int) -> LinkTensor:
-        # noinspection PyTypeChecker
-        return LinkTensor(n=n, dtype=self.int_dtype, device=self.device)
