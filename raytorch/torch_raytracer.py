@@ -3,6 +3,7 @@ from raytorch.surface import Surface, Parallelogram, Ellipsoid
 from raytorch.texture import Texture, ImageTexture, FresnelTexture
 from raytorch.camera import Camera
 from raytorch.renderer import Renderer
+from raytorch.util import auto_str
 from PIL import Image
 from typing import Sequence, Iterable
 import math
@@ -15,6 +16,7 @@ def _batch_dot(self: torch.Tensor, other: torch.Tensor) -> torch.Tensor:
 torch.Tensor.batch_dot = _batch_dot
 
 
+@auto_str
 class Rays:
     """
     Collection of tensors containing ray data:
@@ -322,7 +324,6 @@ class RayTracer(Renderer):
 
             # Continue only if any rays generated
             if len(all_new_rays) > 0:
-                # noinspection PyTypeChecker
                 tree[gen + 1] = Rays.cat([self._allocate_rays(0)] + all_new_rays)
                 continue
             else:
