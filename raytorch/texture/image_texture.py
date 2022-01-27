@@ -1,14 +1,18 @@
-from raytorch.texture import Texture
-from raytorch.core import RGB
+from typing import Union
+
+from pathlib import Path
 import math
 from PIL import Image
-from os.path import abspath
+
+
+from raytorch.texture import Texture
+from raytorch.core import RGB
 
 
 class ImageTexture(Texture):
 
-    def __init__(self, path: str, use_tensors=False):
-        self.path = path
+    def __init__(self, path: Union[Path, str], use_tensors=False):
+        self.path = Path(path)
         self.pixels = None
         self.dim = None
         self.use_tensors = use_tensors
@@ -17,7 +21,7 @@ class ImageTexture(Texture):
 
     def load(self):
         if self.path is not None:
-            self.ambient = Image.open(abspath(self.path), 'r')
+            self.ambient = Image.open(self.path, 'r')
 
     def texel_at(self, u, v):
         """

@@ -2,6 +2,7 @@ from raytorch.surface import Surface
 from raytorch.core import Vector, Matrix
 from raytorch.util import auto_str
 
+
 @auto_str
 class Ellipsoid(Surface):
 

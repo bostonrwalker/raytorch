@@ -1,6 +1,6 @@
 from raytorch.surface import Surface
 from raytorch.texture import Texture
-from raytorch import Camera
+from raytorch.camera import Camera
 from PIL import Image
 from abc import ABC, abstractmethod
 from typing import Iterable, Sequence

@@ -131,6 +131,6 @@ dmypy.json
 # Pycharm project files
 .idea/
 
-# Generated output
+# Generated sample_output
 output/*
 !output/.gitkeep

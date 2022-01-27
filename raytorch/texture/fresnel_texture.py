@@ -1,15 +1,19 @@
+from typing import Callable, Union
+
+from pathlib import Path
+
+from PIL import Image
+
 from raytorch.texture import Texture
 from raytorch.core import RGB
 from raytorch.util import auto_str
-from typing import Callable
-from PIL import Image
 
 
 @auto_str
 class FresnelTexture(Texture):
 
     def __init__(self, surface_col: RGB, reflectivity_func: Callable, refraction_ind: float = 1.,
-                 normal_map_path: str = None):
+                 normal_map_path: Union[Path, str, None] = None):
         """
         :param surface_col: The ambient colour of the surface
         :param reflectivity_func: A function of theta (angle of reflection vs. the normal). Return a tuple containing:

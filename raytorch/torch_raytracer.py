@@ -1,13 +1,19 @@
+from typing import Sequence, Iterable
+
+import math
+from PIL import Image
+import torch
+
 from raytorch.core import Black
-from raytorch.surface import Surface, Parallelogram, Ellipsoid
-from raytorch.texture import Texture, ImageTexture, FresnelTexture
+from raytorch.surface import Surface
+from raytorch.surface.parallelogram import Parallelogram
+from raytorch.surface.ellipsoid import Ellipsoid
+from raytorch.texture import Texture
+from raytorch.texture.image_texture import ImageTexture
+from raytorch.texture.fresnel_texture import FresnelTexture
 from raytorch.camera import Camera
 from raytorch.renderer import Renderer
 from raytorch.util import auto_str
-from PIL import Image
-from typing import Sequence, Iterable
-import math
-import torch
 
 
 # Custom batch_dot() method for tensors
@@ -341,6 +347,7 @@ class RayTracer(Renderer):
         pixels = (pixel_rays.col * 256.).floor().int().clamp(0, 255)
 
         image = Image.new('RGB', (self.width, self.height))
+        # noinspection PyTypeChecker
         image.putdata([tuple(p) for p in pixels.tolist()])
 
         return image
